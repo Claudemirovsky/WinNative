@@ -154,18 +154,21 @@ android {
 
     flavorDimensions "branding"
 
+    def ciPrNumber = System.getenv("CI_PR_NUMBER")
+    def appIdSuffix = (ciPrNumber != null && !ciPrNumber.isEmpty()) ? ".pr.${ciPrNumber}" : ""
+
     productFlavors {
         standard {
             dimension "branding"
-            applicationId "com.winnative.cmod"
+            applicationId "com.winnative.cmod${appIdSuffix}"
         }
         ludashi {
             dimension "branding"
-            applicationId "com.ludashi.benchmark"
+            applicationId "com.ludashi.benchmark${appIdSuffix}"
         }
         pubg {
             dimension "branding"
-            applicationId "com.tencent.ig"
+            applicationId "com.tencent.ig${appIdSuffix}"
         }
     }
 
