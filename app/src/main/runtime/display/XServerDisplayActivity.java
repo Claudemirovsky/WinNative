@@ -973,6 +973,8 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
         isDarkMode = preferences.getBoolean("dark_mode", false);
         isTapToClickEnabled = true;
+        // Force the touchscreen-controls overlay on at each session start (profile default stays none).
+        preferences.edit().putBoolean("show_touchscreen_controls_enabled", true).apply();
         boolean isOpenWithAndroidBrowser = preferences.getBoolean("open_with_android_browser", false);
         boolean isShareAndroidClipboard = preferences.getBoolean("share_android_clipboard", false);
 
@@ -4004,6 +4006,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 preferences.getString(
                     com.winlator.cmod.runtime.input.rumble.GcmRumbleMode.PREF_KEY,
                     com.winlator.cmod.runtime.input.rumble.GcmRumbleMode.DISABLED.toPrefValue()),
+                preferences.getBoolean("reverse_binding_order", false),
                 globalCursorSpeed,
                 xServerView != null && xServerView.getRenderer() != null && xServerView.getRenderer().isFullscreen(),
                 RefreshRateUtils.getMaxSupportedRefreshRate(this),
@@ -4612,6 +4615,13 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                                 gcmMode.toPrefValue())
                             .commit();
                         if (winHandler != null) winHandler.setGcmRumbleMode(gcmMode);
+                        renderDrawerMenu();
+                    }
+
+                    @Override
+                    public void onInputControlsReverseBindingOrderChanged(boolean enabled) {
+                        preferences.edit().putBoolean("reverse_binding_order", enabled).commit();
+                        if (inputControlsView != null) inputControlsView.setReverseBindingOrder(enabled);
                         renderDrawerMenu();
                     }
 
@@ -7042,6 +7052,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
         inputControlsView = new InputControlsView(this, timeoutHandler, hideControlsRunnable);
         inputControlsView.setInputControlsManager(inputControlsManager);
         inputControlsView.setOverlayOpacity(preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY));
+        inputControlsView.setReverseBindingOrder(preferences.getBoolean("reverse_binding_order", false));
         inputControlsView.setTouchpadView(touchpadView);
         inputControlsView.setXServer(xServer);
         applyTouchscreenOverlayPreference();
@@ -7603,7 +7614,6 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     private void hideInputControls() {
         inputControlsView.setVisibility(View.GONE);
         inputControlsView.setProfile(null);
-        preferences.edit().putBoolean("show_touchscreen_controls_enabled", false).apply();
         applyTouchscreenOverlayPreference();
         persistSelectedProfile(null);
 
