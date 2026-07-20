@@ -325,6 +325,15 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     private com.winlator.cmod.runtime.system.SessionLogWriter sessionLogWriter;
     private int taskAffinityMask = 0;
     private int taskAffinityMaskWoW64 = 0;
+    private final HashSet<Integer> guestAffinityCheckedPids = new HashSet<>();
+    private boolean serviceAffinityPinned = false;
+    private static final String[] SERVICE_AFFINITY_PROCESSES = {
+        "services.exe", "rpcss.exe", "svchost.exe", "winedevice.exe",
+        "plugplay.exe", "conhost.exe"
+    };
+    private static final String[] SHELL_AFFINITY_PROCESSES = {
+        "explorer.exe", "steamwebhelper.exe"
+    };
     private int frameRatingWindowId = -1;
     private android.net.wifi.WifiManager.MulticastLock multicastLock;
     private final float[] xform = XForm.getInstance();
@@ -1605,6 +1614,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             @Override
             public void onMapWindow(Window window) {
                 assignTaskAffinity(window);
+                pinServiceAffinity();
                 if ((effectiveShowFPS || controllerHudMode) && frameRating != null) {
                     syncFrameRatingWithExistingWindows();
                 }
@@ -11012,16 +11022,91 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
         if (taskAffinityMask == 0 && taskAffinityMaskWoW64 == 0) return;
         int processId = window.getProcessId();
         String className = window.getClassName();
-        int processAffinity = window.isWoW64() ? taskAffinityMaskWoW64 : taskAffinityMask;
-
-        if (processAffinity == 0) return;
 
         if (processId > 0) {
-            winHandler.setProcessAffinity(processId, processAffinity);
+            if (taskAffinityMask == taskAffinityMaskWoW64) {
+                winHandler.setProcessAffinity(processId, taskAffinityMask);
+            } else {
+                applyGuestResolvedAffinity(processId, window.isWoW64());
+            }
         }
         else if (!className.isEmpty()) {
-            winHandler.setProcessAffinity(window.getClassName(), processAffinity);
+            int processAffinity = window.isWoW64() ? taskAffinityMaskWoW64 : taskAffinityMask;
+            if (processAffinity != 0) winHandler.setProcessAffinity(className, processAffinity);
         }
+    }
+
+    // Background service processes have no windows and never pass through
+    // assignTaskAffinity, leaving them free to wake the prime cores. Once the
+    // session is up (first mapped window), pin them to the efficiency cores
+    // (lower half, matching the upper-half-is-big assumption of the WoW64
+    // fallback list). Shell/UI processes stay on the 64-bit list instead —
+    // they need full speed in the scenarios where they matter.
+    private void pinServiceAffinity() {
+        if (serviceAffinityPinned || winHandler == null) return;
+        serviceAffinityPinned = true;
+        int littleMask =
+                ProcessHelper.getAffinityMask(0, Runtime.getRuntime().availableProcessors() / 2);
+        if (littleMask != 0) {
+            for (String name : SERVICE_AFFINITY_PROCESSES) {
+                winHandler.setProcessAffinity(name, littleMask);
+            }
+        }
+        if (taskAffinityMask != 0) {
+            for (String name : SHELL_AFFINITY_PROCESSES) {
+                winHandler.setProcessAffinity(name, taskAffinityMask);
+            }
+        }
+        Log.d("XServerDisplayActivity", "Pinned services to 0x" + Integer.toHexString(littleMask)
+                + ", shell to 0x" + Integer.toHexString(taskAffinityMask));
+    }
+
+    // _NET_WM_WOW64 can be absent on 32-bit guest windows, so when the two masks
+    // differ, resolve the wow64 flag from the guest process list and apply once.
+    // The window property is only the fallback if the guest doesn't answer.
+    private void applyGuestResolvedAffinity(final int pid, final boolean windowSaysWoW64) {
+        synchronized (guestAffinityCheckedPids) {
+            if (!guestAffinityCheckedPids.add(pid)) return;
+        }
+        new Thread(() -> {
+            final WinHandler handler = winHandler;
+            if (handler == null) return;
+            final CountDownLatch latch = new CountDownLatch(1);
+            final boolean[] resolved = new boolean[1];
+            final OnGetProcessInfoListener previous = handler.getOnGetProcessInfoListener();
+            final OnGetProcessInfoListener resolver = (index, numProcesses, processInfo) -> {
+                if (previous != null) previous.onGetProcessInfo(index, numProcesses, processInfo);
+                if (processInfo != null && processInfo.pid == pid) {
+                    int desired = processInfo.wow64Process ? taskAffinityMaskWoW64 : taskAffinityMask;
+                    Log.d("XServerDisplayActivity", "Guest affinity resolve pid=" + pid
+                            + " wow64=" + processInfo.wow64Process
+                            + " mask=0x" + Integer.toHexString(desired));
+                    if (desired != 0) handler.setProcessAffinity(pid, desired);
+                    resolved[0] = true;
+                    latch.countDown();
+                } else if (processInfo == null || index == numProcesses - 1) {
+                    latch.countDown();
+                }
+            };
+            handler.setOnGetProcessInfoListener(resolver);
+            try {
+                handler.listProcesses();
+                latch.await(3000, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                if (handler.getOnGetProcessInfoListener() == resolver) {
+                    handler.setOnGetProcessInfoListener(previous);
+                }
+            }
+            if (!resolved[0]) {
+                int fallback = windowSaysWoW64 ? taskAffinityMaskWoW64 : taskAffinityMask;
+                if (fallback != 0) handler.setProcessAffinity(pid, fallback);
+                synchronized (guestAffinityCheckedPids) {
+                    guestAffinityCheckedPids.remove(pid);
+                }
+            }
+        }, "GuestAffinityResolve").start();
     }
 
     private void changeFrameRatingVisibility(Window window, Property property) {
