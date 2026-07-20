@@ -594,6 +594,32 @@ Ej. <b>META</b> para la <i>tecla META</i>, \n
     <string name="session_drawer_hud_element_battery">Bat.</string>
     <string name="session_drawer_hud_element_graph">Gráf.</string>
     <string name="session_drawer_hud_element_cpu_temp">C.TMP</string>
+    <string name="session_drawer_hud_mango_style">HUD estilo Mango</string>
+    <string name="session_drawer_hud_mango_settings">Ajustes del HUD Mango</string>
+    <string name="mango_hud_element_gpu_load">Carga GPU</string>
+    <string name="mango_hud_element_gpu_temp">Temp. GPU</string>
+    <string name="mango_hud_element_cpu_load">Carga CPU</string>
+    <string name="mango_hud_element_cpu_temp">Temp. CPU</string>
+    <string name="mango_hud_element_ram">RAM</string>
+    <string name="mango_hud_element_battery">Batería</string>
+    <string name="mango_hud_element_lows" formatted="false">Mínimos 1%</string>
+    <string name="mango_hud_element_graph">Gráfico de frametime</string>
+    <string name="mango_hud_element_engine">Motor</string>
+    <string name="mango_hud_element_vram">VRAM</string>
+    <string name="mango_hud_element_cpu_mhz">Frecuencia CPU</string>
+    <string name="mango_hud_element_gpu_clock">Frecuencia GPU</string>
+    <string name="mango_hud_element_cores">Por núcleo</string>
+    <string name="mango_hud_element_network">Red</string>
+    <string name="mango_hud_element_swap">Swap</string>
+    <string name="mango_hud_element_resolution">Resolución</string>
+    <string name="mango_hud_element_wine">Versión de Wine</string>
+    <string name="mango_hud_element_duration">Tiempo de sesión</string>
+    <string name="mango_hud_element_clock">Reloj</string>
+    <string name="mango_hud_element_throttle">Estado térmico</string>
+    <string name="mango_hud_group_memory">Memoria</string>
+    <string name="mango_hud_group_system">Sistema</string>
+    <string name="mango_hud_lock">Bloquear HUD</string>
+    <string name="mango_hud_lock_subtitle">Permite que los toques pasen a los controles detrás del HUD. Mantén pulsado el HUD para bloquearlo. (3.5 sec)</string>
 
     <!-- Session > Task Manager -->
     <string name="session_task_confirm_end_process">¿Deseas finalizar este proceso?</string>

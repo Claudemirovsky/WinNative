@@ -598,6 +598,32 @@
     <string name="session_drawer_hud_element_battery">Бат.</string>
     <string name="session_drawer_hud_element_graph">Графік</string>
     <string name="session_drawer_hud_element_cpu_temp">C.TMP</string>
+    <string name="session_drawer_hud_mango_style">HUD у стилі Mango</string>
+    <string name="session_drawer_hud_mango_settings">Налаштування Mango HUD</string>
+    <string name="mango_hud_element_gpu_load">Навантаження GPU</string>
+    <string name="mango_hud_element_gpu_temp">Темп. GPU</string>
+    <string name="mango_hud_element_cpu_load">Навантаження CPU</string>
+    <string name="mango_hud_element_cpu_temp">Темп. CPU</string>
+    <string name="mango_hud_element_ram">ОЗП</string>
+    <string name="mango_hud_element_battery">Батарея</string>
+    <string name="mango_hud_element_lows" formatted="false">1% мінімуми</string>
+    <string name="mango_hud_element_graph">Графік фреймтайму</string>
+    <string name="mango_hud_element_engine">Рушій</string>
+    <string name="mango_hud_element_vram">VRAM</string>
+    <string name="mango_hud_element_cpu_mhz">Частота CPU</string>
+    <string name="mango_hud_element_gpu_clock">Частота GPU</string>
+    <string name="mango_hud_element_cores">По ядрах</string>
+    <string name="mango_hud_element_network">Мережа</string>
+    <string name="mango_hud_element_swap">Підкачка</string>
+    <string name="mango_hud_element_resolution">Роздільність</string>
+    <string name="mango_hud_element_wine">Версія Wine</string>
+    <string name="mango_hud_element_duration">Час сесії</string>
+    <string name="mango_hud_element_clock">Годинник</string>
+    <string name="mango_hud_element_throttle">Тротлінг</string>
+    <string name="mango_hud_group_memory">Пам\'ять</string>
+    <string name="mango_hud_group_system">Система</string>
+    <string name="mango_hud_lock">Заблокувати HUD</string>
+    <string name="mango_hud_lock_subtitle">Дотики проходять до елементів керування за HUD. Утримуйте HUD, щоб заблокувати. (3.5 sec)</string>
 
     <!-- Session > Task Manager -->
     <string name="session_task_confirm_end_process">Ви хочете завершити цей процес?</string>

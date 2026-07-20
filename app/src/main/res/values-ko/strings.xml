@@ -594,6 +594,32 @@
     <string name="session_drawer_hud_element_battery">배터리</string>
     <string name="session_drawer_hud_element_graph">그래프</string>
     <string name="session_drawer_hud_element_cpu_temp">C.TMP</string>
+    <string name="session_drawer_hud_mango_style">Mango 스타일 HUD</string>
+    <string name="session_drawer_hud_mango_settings">Mango HUD 설정</string>
+    <string name="mango_hud_element_gpu_load">GPU 부하</string>
+    <string name="mango_hud_element_gpu_temp">GPU 온도</string>
+    <string name="mango_hud_element_cpu_load">CPU 부하</string>
+    <string name="mango_hud_element_cpu_temp">CPU 온도</string>
+    <string name="mango_hud_element_ram">RAM</string>
+    <string name="mango_hud_element_battery">배터리</string>
+    <string name="mango_hud_element_lows" formatted="false">1% 최저</string>
+    <string name="mango_hud_element_graph">프레임타임 그래프</string>
+    <string name="mango_hud_element_engine">엔진</string>
+    <string name="mango_hud_element_vram">VRAM</string>
+    <string name="mango_hud_element_cpu_mhz">CPU 클럭</string>
+    <string name="mango_hud_element_gpu_clock">GPU 클럭</string>
+    <string name="mango_hud_element_cores">코어별</string>
+    <string name="mango_hud_element_network">네트워크</string>
+    <string name="mango_hud_element_swap">스왑</string>
+    <string name="mango_hud_element_resolution">해상도</string>
+    <string name="mango_hud_element_wine">Wine 버전</string>
+    <string name="mango_hud_element_duration">세션 시간</string>
+    <string name="mango_hud_element_clock">시계</string>
+    <string name="mango_hud_element_throttle">스로틀 상태</string>
+    <string name="mango_hud_group_memory">메모리</string>
+    <string name="mango_hud_group_system">시스템</string>
+    <string name="mango_hud_lock">HUD 잠금</string>
+    <string name="mango_hud_lock_subtitle">터치가 HUD 뒤의 컨트롤로 전달됩니다. HUD를 길게 누르면 잠깁니다. (3.5 sec)</string>
 
     <!-- Session > Task Manager -->
     <string name="session_task_confirm_end_process">이 프로세스를 종료하시겠습니까?</string>

@@ -598,6 +598,32 @@ Np. <b>META</b> dla <i>klawisza META</i>, \n
     <string name="session_drawer_hud_element_battery">Bat.</string>
     <string name="session_drawer_hud_element_graph">Wykr.</string>
     <string name="session_drawer_hud_element_cpu_temp">C.TMP</string>
+    <string name="session_drawer_hud_mango_style">HUD w stylu Mango</string>
+    <string name="session_drawer_hud_mango_settings">Ustawienia HUD Mango</string>
+    <string name="mango_hud_element_gpu_load">Obciążenie GPU</string>
+    <string name="mango_hud_element_gpu_temp">Temp. GPU</string>
+    <string name="mango_hud_element_cpu_load">Obciążenie CPU</string>
+    <string name="mango_hud_element_cpu_temp">Temp. CPU</string>
+    <string name="mango_hud_element_ram">RAM</string>
+    <string name="mango_hud_element_battery">Bateria</string>
+    <string name="mango_hud_element_lows" formatted="false">1% dołków</string>
+    <string name="mango_hud_element_graph">Wykres frametime</string>
+    <string name="mango_hud_element_engine">Silnik</string>
+    <string name="mango_hud_element_vram">VRAM</string>
+    <string name="mango_hud_element_cpu_mhz">Takt CPU</string>
+    <string name="mango_hud_element_gpu_clock">Takt GPU</string>
+    <string name="mango_hud_element_cores">Na rdzeń</string>
+    <string name="mango_hud_element_network">Sieć</string>
+    <string name="mango_hud_element_swap">Swap</string>
+    <string name="mango_hud_element_resolution">Rozdzielczość</string>
+    <string name="mango_hud_element_wine">Wersja Wine</string>
+    <string name="mango_hud_element_duration">Czas sesji</string>
+    <string name="mango_hud_element_clock">Zegar</string>
+    <string name="mango_hud_element_throttle">Stan dławienia</string>
+    <string name="mango_hud_group_memory">Pamięć</string>
+    <string name="mango_hud_group_system">System</string>
+    <string name="mango_hud_lock">Zablokuj HUD</string>
+    <string name="mango_hud_lock_subtitle">Dotknięcia trafiają do sterowania za HUD-em. Przytrzymaj HUD, aby go zablokować. (3.5 sec)</string>
 
     <!-- Session > Task Manager -->
     <string name="session_task_confirm_end_process">Czy chcesz zakończyć ten proces?</string>
