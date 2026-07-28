@@ -546,6 +546,8 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     private static final long EXIT_CLOUD_UPLOAD_RETRY_DELAY_MS = 1000L;
 
     private Handler  timeoutHandler = new Handler(Looper.getMainLooper());
+    private static final long POINTER_ACTIVITY_REARM_MS = 1000L;
+    private long lastPointerActivityAt = 0L;
     private Runnable hideControlsRunnable;
 
     private volatile boolean startFullscreenStretched;
@@ -4112,6 +4114,9 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     }
 
     private String currentGyroActivatorLabel() {
+        if (preferences.getBoolean("mouse_gyro_enabled", false)) {
+            return WinHandler.getGyroMouseActivator(preferences).toString();
+        }
         String[] names = getResources().getStringArray(R.array.button_options);
         int[] keycodes = getResources().getIntArray(R.array.button_keycodes);
         int currentKeycode = preferences.getInt("gyro_trigger_button", KeyEvent.KEYCODE_BUTTON_L1);
@@ -4460,6 +4465,12 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                     @Override
                     public void onGyroscopeActivatorSelected(int keycode) {
                         preferences.edit().putInt("gyro_trigger_button", keycode).apply();
+                        renderDrawerMenu();
+                    }
+
+                    @Override
+                    public void onGyroscopeActivatorBindingSelected(String bindingName) {
+                        preferences.edit().putString("gyro_mouse_trigger_binding", bindingName).apply();
                         renderDrawerMenu();
                     }
 
@@ -6134,6 +6145,20 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     private void cancelMousePointerTimeout() {
         if (timeoutHandler != null && hideControlsRunnable != null) {
             timeoutHandler.removeCallbacks(hideControlsRunnable);
+        }
+    }
+
+    // Pointer movement that bypasses touch/mouse events (gyro) still counts as activity.
+    public void notifyPointerActivity() {
+        if (isMouseDisabled || xServer == null || xServer.getRenderer() == null) return;
+        boolean hidden = !xServer.getRenderer().isCursorVisible();
+        long now = SystemClock.uptimeMillis();
+        if (!hidden && now - lastPointerActivityAt < POINTER_ACTIVITY_REARM_MS) return;
+        lastPointerActivityAt = now;
+        if (hidden) xServer.getRenderer().setCursorVisible(true);
+        if (timeoutHandler != null && hideControlsRunnable != null) {
+            timeoutHandler.removeCallbacks(hideControlsRunnable);
+            timeoutHandler.postDelayed(hideControlsRunnable, 5000);
         }
     }
 
