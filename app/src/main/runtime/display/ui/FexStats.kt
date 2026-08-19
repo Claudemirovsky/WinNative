@@ -60,6 +60,8 @@ internal class FexStats(imageFsRoot: File) {
 
   private val shmDirs: Array<File> =
       arrayOf(
+          // fexbuild/bionic_shm.h redirects shm_open to imagefs/tmp on Bionic.
+          File(imageFsRoot, "tmp"),
           File(imageFsRoot, "usr/tmp"),
           File(imageFsRoot, "dev/shm"),
       )
@@ -132,6 +134,10 @@ internal class FexStats(imageFsRoot: File) {
     // If the SHM changed size then remap with the new size; FEX grows the region
     // to fit more threads without invalidating previous thread data.
     if (!checkShmUpdateNecessary()) return
+
+    // FEX publishes the relaxed SHM atomics with an ARM store barrier. Pair it
+    // with an acquire barrier before walking the list.
+    nativeMemoryBarrier()
 
     // The open can race the process' exec; retry the name lookup until it sticks.
     if (processName.isEmpty() && trackedPid > 0) {
@@ -257,10 +263,12 @@ internal class FexStats(imageFsRoot: File) {
       val mapSize = alignUp(fileSize, pageSize)
       val map = channel.map(FileChannel.MapMode.READ_ONLY, 0, mapSize)
       map.order(ByteOrder.LITTLE_ENDIAN)
+      nativeMemoryBarrier()
       if ((map.get(HDR_VERSION).toInt() and 0xFF) != FEX_STATS_VERSION) {
         // Version read doesn't match the implementation, we can't read.
-        status = "version mismatch"
         closeQuietly(raf)
+        destroyShm()
+        status = "version mismatch"
         return
       }
 
@@ -304,6 +312,7 @@ internal class FexStats(imageFsRoot: File) {
   }
 
   private fun checkShmUpdateNecessary(): Boolean {
+    nativeMemoryBarrier()
     val newSize = alignUp(readU32(HDR_SIZE), pageSize)
     if (newSize == shmSize) return true
     if (newSize < HEADER_SIZE) return true // header not fully written yet
@@ -337,6 +346,10 @@ internal class FexStats(imageFsRoot: File) {
   /** 16-byte-chunk copy semantics of atomic_copy_thread_stats(). */
   private fun copyThreadStats(dest: LongArray, base: Int) {
     val buffer = shm ?: return
+    if (nativeCopyThreadStats(buffer, base, trackedThreadStatsSize, dest)) return
+
+    // The native path is expected for a direct mapped buffer. Keep a guarded
+    // fallback for unusual Android buffer implementations.
     if (TS_JIT_TIME < trackedThreadStatsSize) dest[0] = buffer.getLong(base + TS_JIT_TIME)
     if (TS_SIGNAL_TIME < trackedThreadStatsSize) dest[1] = buffer.getLong(base + TS_SIGNAL_TIME)
     if (TS_SIGBUS_COUNT < trackedThreadStatsSize) dest[2] = buffer.getLong(base + TS_SIGBUS_COUNT)
@@ -378,6 +391,9 @@ internal class FexStats(imageFsRoot: File) {
   // ── native glue ───
 
   private external fun nativeCycleCounterFrequency(): Long
+  private external fun nativeMemoryBarrier()
+  private external fun nativeCopyThreadStats(
+      buffer: ByteBuffer, base: Int, statsSize: Int, dest: LongArray): Boolean
 
   private fun detectCycleCounterFrequency(): Long {
     return try {
