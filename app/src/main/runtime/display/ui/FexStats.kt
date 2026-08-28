@@ -57,6 +57,7 @@ internal class FexStats(imageFsRoot: File) {
   @JvmField val sigbusCounts = EventCounts()
   @JvmField val smcCounts = EventCounts()
   @JvmField val softfloatCounts = EventCounts()
+  @JvmField val cacheMissCounts = EventCounts()
 
   private val shmDirs: Array<File> =
       arrayOf(
@@ -153,7 +154,7 @@ internal class FexStats(imageFsRoot: File) {
     while (headerOffset != 0L && iterations < maxIterations) {
       // The whole slot must fit; a torn offset near the end would otherwise
       // throw past the ByteBuffer bounds (upstream just reads the mmap page).
-      if (headerOffset + THREAD_STATS_SIZE > shmSize) break
+      if (headerOffset + THREAD_STATS_SLOT_SIZE > shmSize) break
       val base = headerOffset.toInt()
       val tid = readU32(base + TS_TID).toInt()
       if (tid != 0) {
@@ -179,6 +180,7 @@ internal class FexStats(imageFsRoot: File) {
     var totalSigbusEvents = 0L
     var totalSmcEvents = 0L
     var totalSoftfloatEvents = 0L
+    var totalCacheMisses = 0L
     var threadsSampled = 0
     hottestThreads.clear()
     val it = sampledStats.entries.iterator()
@@ -191,6 +193,7 @@ internal class FexStats(imageFsRoot: File) {
       totalSigbusEvents += counterDelta(retained.current[2], retained.previous[2])
       totalSmcEvents += counterDelta(retained.current[3], retained.previous[3])
       totalSoftfloatEvents += counterDelta(retained.current[4], retained.previous[4])
+      totalCacheMisses += counterDelta(retained.current[5], retained.previous[5])
       System.arraycopy(retained.current, 0, retained.previous, 0, FIELD_COUNT)
       totalJitTime += totalTime
       if (nowNs - retained.lastSeenNs >= MAXIMUM_THREAD_WAIT_NS) {
@@ -230,6 +233,7 @@ internal class FexStats(imageFsRoot: File) {
     sigbusCounts.account(totalSigbusEvents, nowNs)
     smcCounts.account(totalSmcEvents, nowNs)
     softfloatCounts.account(totalSoftfloatEvents, nowNs)
+    cacheMissCounts.account(totalCacheMisses, nowNs)
 
     previousSamplePeriodNs = nowNs
 
@@ -292,6 +296,7 @@ internal class FexStats(imageFsRoot: File) {
       sigbusCounts.accountTime(previousSamplePeriodNs)
       smcCounts.accountTime(previousSamplePeriodNs)
       softfloatCounts.accountTime(previousSamplePeriodNs)
+      cacheMissCounts.accountTime(previousSamplePeriodNs)
       loadData.fill(0f)
       threadLoadCount = 0
     } catch (e: Exception) {
@@ -344,7 +349,7 @@ internal class FexStats(imageFsRoot: File) {
   private fun readThreadStatsSize(): Int {
     val buffer = shm ?: return THREAD_STATS_SIZE
     val provided = buffer.getShort(HDR_THREAD_STATS_SIZE).toInt() and 0xFFFF
-    return if (provided == 0) THREAD_STATS_SIZE else minOf(provided, THREAD_STATS_SIZE)
+    return if (provided == 0) THREAD_STATS_SLOT_SIZE else minOf(provided, THREAD_STATS_SIZE)
   }
 
   /** 16-byte-chunk copy semantics of atomic_copy_thread_stats(). */
@@ -361,6 +366,9 @@ internal class FexStats(imageFsRoot: File) {
     if (TS_SMC_EVENTS < trackedThreadStatsSize) dest[3] = buffer.getLong(base + TS_SMC_EVENTS)
     if (TS_SOFTFLOAT_COUNT < trackedThreadStatsSize) {
       dest[4] = buffer.getLong(base + TS_SOFTFLOAT_COUNT)
+    }
+    if (TS_CACHE_MISS_COUNT < trackedThreadStatsSize) {
+      dest[5] = buffer.getLong(base + TS_CACHE_MISS_COUNT)
     }
   }
 
@@ -435,7 +443,7 @@ internal class FexStats(imageFsRoot: File) {
     private const val HDR_SIZE = 56 // atomic u32: current shm size
     private const val HEADER_SIZE = 64
 
-    // fex_thread_stats layout (48 bytes; FEX may append fields, we read the v2 prefix).
+    // fex_thread_stats layout; FEX may append fields, we read the prefix through cache misses.
     private const val TS_NEXT = 0 // atomic u32
     private const val TS_TID = 4 // atomic u32
     private const val TS_JIT_TIME = 8 // u64, CNTVCT_EL0 cycles
@@ -443,8 +451,10 @@ internal class FexStats(imageFsRoot: File) {
     private const val TS_SIGBUS_COUNT = 24 // u64
     private const val TS_SMC_EVENTS = 32 // u64
     private const val TS_SOFTFLOAT_COUNT = 40 // u64
-    private const val THREAD_STATS_SIZE = 48
-    private const val FIELD_COUNT = 5
+    private const val TS_CACHE_MISS_COUNT = 48 // u64
+    private const val THREAD_STATS_SLOT_SIZE = 48
+    private const val THREAD_STATS_SIZE = 64
+    private const val FIELD_COUNT = 6
 
     private const val FEX_STATS_VERSION = 2
     private const val MAXIMUM_THREAD_WAIT_NS = 10000000000L // 10s
