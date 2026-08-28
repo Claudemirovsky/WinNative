@@ -71,7 +71,22 @@ public class MangoHudView extends View {
   public static final int EL_CLOCK = 18;
   public static final int EL_THROTTLE = 19;
   public static final int EL_FEX = 20;
-  public static final int ELEMENT_COUNT = 21;
+  public static final int EL_FEX_STATUS = 21;
+  public static final int EL_FEX_APP_TYPE = 22;
+  public static final int EL_FEX_HOT_THREADS = 23;
+  public static final int EL_FEX_JIT_LOAD = 24;
+  public static final int EL_FEX_SIGBUS = 25;
+  public static final int EL_FEX_SMC = 26;
+  public static final int EL_FEX_SOFTFLOAT = 27;
+  public static final int ELEMENT_COUNT = 28;
+  private static final int FEX_SUBELEMENTS_MASK =
+      (1 << EL_FEX_STATUS)
+          | (1 << EL_FEX_APP_TYPE)
+          | (1 << EL_FEX_HOT_THREADS)
+          | (1 << EL_FEX_JIT_LOAD)
+          | (1 << EL_FEX_SIGBUS)
+          | (1 << EL_FEX_SMC)
+          | (1 << EL_FEX_SOFTFLOAT);
   // Original ten elements plus both clock cells on; the rest opt-in.
   private static final int DEFAULT_ELEMENTS_MASK = 0xFFF;
 
@@ -253,7 +268,7 @@ public class MangoHudView extends View {
     public void run() {
       Handler handler = statsHandler;
       if (handler == null) return;
-      boolean active = getVisibility() == VISIBLE && elements[EL_FEX];
+      boolean active = getVisibility() == VISIBLE && hasFexElements(elements);
       if (!active) {
         handler.postDelayed(this, HIDDEN_TICK_MS);
         return;
@@ -350,7 +365,14 @@ public class MangoHudView extends View {
   public static boolean fexElementEnabled(SharedPreferences preferences) {
     if (!preferences.getBoolean(PREF_ENABLED, false)) return false;
     int mask = preferences.getInt(PREF_ELEMENTS, DEFAULT_ELEMENTS_MASK);
-    return (mask & (1 << EL_FEX)) != 0;
+    return (mask & FEX_SUBELEMENTS_MASK) != 0;
+  }
+
+  private static boolean hasFexElements(boolean[] elements) {
+    for (int i = EL_FEX_STATUS; i <= EL_FEX_SOFTFLOAT; i++) {
+      if (elements[i]) return true;
+    }
+    return false;
   }
 
   public static void saveElement(SharedPreferences preferences, int index, boolean enabled) {
@@ -396,13 +418,13 @@ public class MangoHudView extends View {
     if (index < 0 || index >= ELEMENT_COUNT) return;
     synchronized (uiLock) {
       elements[index] = enabled;
-      if (index == EL_FEX && !enabled) {
+      if (index >= EL_FEX_STATUS && index <= EL_FEX_SOFTFLOAT && !hasFexElements(elements)) {
         fexStats.close();
         fexPidFound = false;
       }
       computeLayoutLocked();
     }
-    if (index == EL_FEX && enabled) {
+    if (index >= EL_FEX_STATUS && index <= EL_FEX_SOFTFLOAT && enabled) {
       // Kick the 10 Hz sampler now instead of waiting out a hidden-interval delay.
       Handler handler = statsHandler;
       if (handler != null) {
@@ -735,21 +757,25 @@ public class MangoHudView extends View {
       if (elements[EL_CLOCK]) {
         formatClock(sbClock);
       }
-      if (elements[EL_FEX]) {
+      if (hasFexElements(elements)) {
         // Text cells only; graphs and fexPidFound are refreshed by fexTickRunnable at 10 Hz.
-        sbFexStatus.setLength(0);
-        sbFexStatus.append(fexStats.status);
-        sbFexType.setLength(0);
-        sbFexType.append(fexStats.appType());
+        if (elements[EL_FEX_STATUS]) {
+          sbFexStatus.setLength(0);
+          sbFexStatus.append(fexStats.status);
+        }
+        if (elements[EL_FEX_APP_TYPE]) {
+          sbFexType.setLength(0);
+          sbFexType.append(fexStats.appType());
+        }
         sbFexProc.setLength(0);
         if (fexStats.processName.isEmpty()) {
           sbFexProc.append("pid ").append(fexStats.trackedPid);
         } else {
           sbFexProc.append(fexStats.processName);
         }
-        formatFexCount(sbFexSigbus, fexStats.sigbusCounts);
-        formatFexCount(sbFexSmc, fexStats.smcCounts);
-        formatFexCount(sbFexSoftfloat, fexStats.softfloatCounts);
+        if (elements[EL_FEX_SIGBUS]) formatFexCount(sbFexSigbus, fexStats.sigbusCounts);
+        if (elements[EL_FEX_SMC]) formatFexCount(sbFexSmc, fexStats.smcCounts);
+        if (elements[EL_FEX_SOFTFLOAT]) formatFexCount(sbFexSoftfloat, fexStats.softfloatCounts);
       }
       sbMinMax.setLength(0);
       sbMinMax.append("min:");
@@ -1347,11 +1373,17 @@ public class MangoHudView extends View {
     if (elements[EL_CLOCK]) smallRows++;
     if (elements[EL_THROTTLE] && throttleStatus > 0) smallRows++;
     // FEX block: status row always; details + two graphs once a stats shm is found.
-    if (elements[EL_FEX]) {
-      smallRows++;
-      w = Math.max(w, smallCharW * 20); // "FEX" + status (incl. "version mismatch")
+    if (hasFexElements(elements)) {
+      if (elements[EL_FEX_STATUS]) {
+        smallRows++;
+        w = Math.max(w, smallCharW * 20); // "FEX" + status (incl. "version mismatch")
+      }
       if (fexPidFound) {
-        smallRows += 5; // TYPE, PROC, SIGBUS, SMC, SOFTFLOAT
+        if (elements[EL_FEX_APP_TYPE]) smallRows++;
+        smallRows++; // process name / pid
+        if (elements[EL_FEX_SIGBUS]) smallRows++;
+        if (elements[EL_FEX_SMC]) smallRows++;
+        if (elements[EL_FEX_SOFTFLOAT]) smallRows++;
         w = Math.max(w, smallCharW * 29); // "SIGBUS 1234567890 - 1234 avg/s"
       }
     }
@@ -1360,8 +1392,9 @@ public class MangoHudView extends View {
     if (elements[EL_GRAPH]) {
       h += smallRowH + graphH + pad * 0.5f;
     }
-    if (elements[EL_FEX] && fexPidFound) {
-      h += (smallRowH + graphH + pad * 0.5f) * 2; // hot threads + JIT load graphs
+    if (hasFexElements(elements) && fexPidFound) {
+      if (elements[EL_FEX_HOT_THREADS]) h += smallRowH + graphH + pad * 0.5f;
+      if (elements[EL_FEX_JIT_LOAD]) h += smallRowH + graphH + pad * 0.5f;
     }
     panelW = (int) Math.ceil(w + pad * 2);
     panelH = (int) Math.ceil(h + pad * 2);
@@ -1495,22 +1528,26 @@ public class MangoHudView extends View {
         drawGraph(canvas, pad, y, panelW - pad * 2, graphH);
         y += graphH;
       }
-      if (elements[EL_FEX]) {
-        y = drawFexRow(canvas, "FEX", sbFexStatus, y);
+      if (hasFexElements(elements)) {
+        if (elements[EL_FEX_STATUS]) y = drawFexRow(canvas, "FEX", sbFexStatus, y);
         if (fexPidFound) {
-          y = drawFexRow(canvas, "TYPE", sbFexType, y);
+          if (elements[EL_FEX_APP_TYPE]) y = drawFexRow(canvas, "TYPE", sbFexType, y);
           y = drawFexRow(canvas, "PROC", sbFexProc, y);
-          y = drawFexRow(canvas, "SIGBUS", sbFexSigbus, y);
-          y = drawFexRow(canvas, "SMC", sbFexSmc, y);
-          y = drawFexRow(canvas, "SOFTFLOAT", sbFexSoftfloat, y);
-          drawOutlinedSmall(
-              canvas, "FEX JIT top loaded threads", 0, 26, pad, y + smallBaseline, C_ENGINE);
-          y += smallRowH + pad * 0.5f;
-          drawFexHistogram(canvas, pad, y, panelW - pad * 2, graphH);
-          y += graphH;
-          drawOutlinedSmall(canvas, "FEX JIT Load", 0, 12, pad, y + smallBaseline, C_ENGINE);
-          y += smallRowH + pad * 0.5f;
-          drawFexJitGraph(canvas, pad, y, panelW - pad * 2, graphH);
+          if (elements[EL_FEX_SIGBUS]) y = drawFexRow(canvas, "SIGBUS", sbFexSigbus, y);
+          if (elements[EL_FEX_SMC]) y = drawFexRow(canvas, "SMC", sbFexSmc, y);
+          if (elements[EL_FEX_SOFTFLOAT]) y = drawFexRow(canvas, "SOFTFLOAT", sbFexSoftfloat, y);
+          if (elements[EL_FEX_HOT_THREADS]) {
+            drawOutlinedSmall(
+                canvas, "FEX JIT top loaded threads", 0, 26, pad, y + smallBaseline, C_ENGINE);
+            y += smallRowH + pad * 0.5f;
+            drawFexHistogram(canvas, pad, y, panelW - pad * 2, graphH);
+            y += graphH;
+          }
+          if (elements[EL_FEX_JIT_LOAD]) {
+            drawOutlinedSmall(canvas, "FEX JIT Load", 0, 12, pad, y + smallBaseline, C_ENGINE);
+            y += smallRowH + pad * 0.5f;
+            drawFexJitGraph(canvas, pad, y, panelW - pad * 2, graphH);
+          }
         }
       }
     }

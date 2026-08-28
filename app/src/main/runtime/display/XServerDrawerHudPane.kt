@@ -542,7 +542,14 @@ internal fun MangoHudSettingsDialog(
             stringResource(R.string.mango_hud_element_duration),
             stringResource(R.string.mango_hud_element_clock),
             stringResource(R.string.mango_hud_element_throttle),
-            stringResource(R.string.mango_hud_element_fex),
+            stringResource(R.string.mango_hud_group_fex),
+            stringResource(R.string.mango_hud_element_fex_version),
+            stringResource(R.string.mango_hud_element_fex_app_type),
+            stringResource(R.string.mango_hud_element_fex_hot_threads),
+            stringResource(R.string.mango_hud_element_fex_jit_load),
+            stringResource(R.string.mango_hud_element_fex_sigbus),
+            stringResource(R.string.mango_hud_element_fex_smc),
+            stringResource(R.string.mango_hud_element_fex_softfloat),
         )
     // Display groups (label res -> element indices), decoupled from index order.
     val groups =
@@ -551,7 +558,8 @@ internal fun MangoHudSettingsDialog(
             R.string.session_drawer_hud_element_cpu to listOf(2, 3, 10, 12),
             R.string.mango_hud_group_memory to listOf(4, 14),
             R.string.session_drawer_hud_element_fps to listOf(6, 7, 8),
-            R.string.mango_hud_group_system to listOf(5, 13, 15, 16, 17, 18, 19, 20),
+            R.string.mango_hud_group_system to listOf(5, 13, 15, 16, 17, 18, 19),
+            R.string.mango_hud_group_fex to listOf(21, 22, 23, 24, 25, 26, 27),
         )
 
     // stableCursor: track the selected slot by identity, not by spatial index —

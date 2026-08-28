@@ -60,7 +60,6 @@ internal class FexStats(imageFsRoot: File) {
 
   private val shmDirs: Array<File> =
       arrayOf(
-          // fexbuild/bionic_shm.h redirects shm_open to imagefs/tmp on Bionic.
           File(imageFsRoot, "tmp"),
           File(imageFsRoot, "usr/tmp"),
           File(imageFsRoot, "dev/shm"),
