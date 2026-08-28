@@ -187,11 +187,11 @@ internal class FexStats(imageFsRoot: File) {
       val retained = it.next().value
       threadsSampled++
       val totalTime =
-          (retained.current[0] - retained.previous[0]) +
-              (retained.current[1] - retained.previous[1])
-      totalSigbusEvents += retained.current[2] - retained.previous[2]
-      totalSmcEvents += retained.current[3] - retained.previous[3]
-      totalSoftfloatEvents += retained.current[4] - retained.previous[4]
+          counterDelta(retained.current[0], retained.previous[0]) +
+              counterDelta(retained.current[1], retained.previous[1])
+      totalSigbusEvents += counterDelta(retained.current[2], retained.previous[2])
+      totalSmcEvents += counterDelta(retained.current[3], retained.previous[3])
+      totalSoftfloatEvents += counterDelta(retained.current[4], retained.previous[4])
       System.arraycopy(retained.current, 0, retained.previous, 0, FIELD_COUNT)
       totalJitTime += totalTime
       if (nowNs - retained.lastSeenNs >= MAXIMUM_THREAD_WAIT_NS) {
@@ -245,6 +245,11 @@ internal class FexStats(imageFsRoot: File) {
     for (dir in shmDirs) {
       val entries = dir.listFiles(STATS_FILTER) ?: continue
       for (entry in entries) {
+        // shm_unlink normally removes the object when FEX exits, but a
+        // file-backed Android shim can leave stale objects after a crash.
+        // Never attach the HUD to one of those just because it is newest.
+        val pid = pidFromStatsFile(entry)
+        if (pid <= 0 || !File("/proc/$pid").isDirectory) continue
         if (best == null || entry.lastModified() > best.lastModified()) best = entry
       }
     }
@@ -346,6 +351,7 @@ internal class FexStats(imageFsRoot: File) {
   /** 16-byte-chunk copy semantics of atomic_copy_thread_stats(). */
   private fun copyThreadStats(dest: LongArray, base: Int) {
     val buffer = shm ?: return
+    dest.fill(0L)
     if (nativeCopyThreadStats(buffer, base, trackedThreadStatsSize, dest)) return
 
     // The native path is expected for a direct mapped buffer. Keep a guarded
@@ -357,6 +363,12 @@ internal class FexStats(imageFsRoot: File) {
     if (TS_SOFTFLOAT_COUNT < trackedThreadStatsSize) {
       dest[4] = buffer.getLong(base + TS_SOFTFLOAT_COUNT)
     }
+  }
+
+  private fun counterDelta(current: Long, previous: Long): Long {
+    // FEX counters are monotonic, but a process restart or an inconsistent
+    // observation during publication must not become a giant unsigned delta.
+    return if (current >= previous) current - previous else 0L
   }
 
   // ── process identity ─────────────────────────────────────────────
