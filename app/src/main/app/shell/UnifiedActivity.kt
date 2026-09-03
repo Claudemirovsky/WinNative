@@ -150,7 +150,8 @@ import com.winlator.cmod.app.PluviaApp
 import com.winlator.cmod.app.db.PluviaDatabase
 import com.winlator.cmod.app.service.DownloadService
 import com.winlator.cmod.app.service.download.DownloadCoordinator
-import com.winlator.cmod.app.update.UpdateChecker
+import com.winlator.cmod.app.update.UpdateHost
+import com.winlator.cmod.app.update.UpdateService
 import com.winlator.cmod.feature.settings.InputControlsFragment
 import com.winlator.cmod.feature.settings.SettingsFocusZone
 import com.winlator.cmod.feature.settings.SettingsHost
@@ -422,6 +423,8 @@ class UnifiedActivity :
     val storeFocusIndex = kotlinx.coroutines.flow.MutableStateFlow(0)
     var storeItemCount: Int = 0
 
+    val storeHeaderVisible = kotlinx.coroutines.flow.MutableStateFlow(true)
+
     internal val storeColumns: Int
         get() = com.winlator.cmod.shared.ui.gridColumnsForWidth(resources.configuration.screenWidthDp)
 
@@ -614,8 +617,8 @@ class UnifiedActivity :
     override fun onPause() {
         super.onPause()
         chasingBordersPaused.value = true
-        UpdateChecker.stopBackgroundLoop()
-        UpdateChecker.cancelPostGameCheck()
+        UpdateService.stopHourlyLoop()
+        UpdateService.cancelPostGameCheck()
     }
 
     override fun onResume() {
@@ -630,7 +633,7 @@ class UnifiedActivity :
             hasCompletedInitialResume = true
         }
 
-        UpdateChecker.startBackgroundLoop(this)
+        UpdateService.startHourlyLoop(this)
         processPendingRetroCloudBackup()
     }
 
@@ -1244,8 +1247,11 @@ class UnifiedActivity :
                 }
 
                 TaskProgressHost()
+
+                UpdateHost()
             }
         }
+        UpdateService.onAppStarted(this)
         scheduleDeferredStoreBootstrap()
     }
 

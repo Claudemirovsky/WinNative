@@ -157,7 +157,7 @@ import com.winlator.cmod.app.PluviaApp
 import com.winlator.cmod.app.db.PluviaDatabase
 import com.winlator.cmod.app.service.DownloadService
 import com.winlator.cmod.app.service.download.DownloadCoordinator
-import com.winlator.cmod.app.update.UpdateChecker
+import com.winlator.cmod.app.update.UpdateService
 import com.winlator.cmod.feature.settings.InputControlsFragment
 import com.winlator.cmod.feature.settings.SettingsFocusZone
 import com.winlator.cmod.feature.settings.SettingsHost
@@ -191,6 +191,8 @@ import com.winlator.cmod.feature.stores.gog.service.GOGManifestSizes
 import com.winlator.cmod.feature.stores.gog.service.GOGService
 import com.winlator.cmod.feature.stores.gog.service.GOGUpdateInfo
 import com.winlator.cmod.feature.stores.gog.ui.auth.GOGOAuthActivity
+import com.winlator.cmod.feature.stores.itch.service.ItchLibrary
+import com.winlator.cmod.feature.stores.itch.service.ItchService
 import com.winlator.cmod.feature.stores.steam.SteamLoginActivity
 import com.winlator.cmod.feature.stores.steam.data.DepotInfo
 import com.winlator.cmod.feature.stores.steam.data.DownloadInfo
@@ -198,7 +200,12 @@ import com.winlator.cmod.feature.stores.steam.data.SteamApp
 import com.winlator.cmod.feature.stores.steam.enums.DownloadPhase
 import com.winlator.cmod.feature.stores.steam.events.AndroidEvent
 import com.winlator.cmod.feature.stores.steam.events.EventDispatcher
+import com.winlator.cmod.feature.stores.steam.service.STEAM_DEFAULT_BRANCH
 import com.winlator.cmod.feature.stores.steam.service.SteamService
+import com.winlator.cmod.feature.stores.steam.service.getInstalledBranch
+import com.winlator.cmod.feature.stores.steam.service.getSelectableBranches
+import com.winlator.cmod.feature.stores.steam.service.getSelectedBranch
+import com.winlator.cmod.feature.stores.steam.service.setSelectedBranch
 import com.winlator.cmod.feature.stores.steam.utils.PrefManager
 import com.winlator.cmod.feature.stores.steam.utils.getAvatarURL
 import com.winlator.cmod.feature.sync.CloudSyncHelper
@@ -889,6 +896,14 @@ internal fun UnifiedActivity.GameSettingsDialog(
     val isCustom = app.id < 0
     val isEpic = app.id >= 2000000000
     val epicId = if (isEpic) app.id - 2000000000 else 0
+    val itchGameId by produceState<Int?>(null, app.id, isCustom) {
+        value =
+            if (isCustom) {
+                withContext(Dispatchers.IO) { ItchService.installedGameId(context, app.gameDir.orEmpty(), app.name) }
+            } else {
+                null
+            }
+    }
     var shortcutRefreshKey by remember(app.id, isCustom, isEpic, epicId) { mutableStateOf(0) }
     var pinnedShortcutOverride by remember(app.id, isCustom, isEpic, epicId) { mutableStateOf<Boolean?>(null) }
     val epicArtworkUrl by produceState<String?>(initialValue = null, key1 = isEpic, key2 = epicId) {
@@ -1340,13 +1355,13 @@ internal fun UnifiedActivity.GameSettingsDialog(
             GameSettingsScreen.Uninstall -> {
                 UninstallConfirmation(
                     message =
-                        if (isCustom) {
+                        if (isCustom && itchGameId == null) {
                             getString(R.string.library_games_remove_confirm, app.name)
                         } else {
                             getString(R.string.library_games_uninstall_confirm, app.name)
                         },
                     confirmLabel =
-                        if (isCustom) {
+                        if (isCustom && itchGameId == null) {
                             stringResource(
                                 R.string.common_ui_remove,
                             )
@@ -1355,15 +1370,24 @@ internal fun UnifiedActivity.GameSettingsDialog(
                         },
                     onConfirm = {
                         if (isCustom) {
+                            val itchId = itchGameId
                             scope.launch(Dispatchers.IO) {
                                 val cm = ContainerManager(context)
                                 val sc = findLibraryShortcutForGame(cm, app, isCustom, isEpic, epicId)
                                 sc?.let { LibraryShortcutUtils.deleteShortcutArtifacts(context, it) }
+                                itchId?.let { ItchService.uninstall(context, it) }
                                 PluviaApp.events.emit(AndroidEvent.LibraryInstallStatusChanged(app.id))
                                 withContext(Dispatchers.Main) {
                                     com.winlator.cmod.shared.ui.toast.WinToast.show(
                                         context,
-                                        getString(R.string.library_games_game_removed, app.name),
+                                        getString(
+                                            if (itchId == null) {
+                                                R.string.library_games_game_removed
+                                            } else {
+                                                R.string.library_games_game_uninstalled
+                                            },
+                                            app.name,
+                                        ),
                                         android.widget.Toast.LENGTH_SHORT,
                                     )
                                     onDismissRequest()
@@ -1698,6 +1722,56 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
     val isEpic = app.id >= 2000000000
     val isGog = gogGame != null
     val epicId = if (isEpic) app.id - 2000000000 else 0
+    val itchGameId by produceState<Int?>(null, app.id, isCustom) {
+        value =
+            if (isCustom) {
+                withContext(Dispatchers.IO) { ItchService.installedGameId(context, app.gameDir.orEmpty(), app.name) }
+            } else {
+                null
+            }
+    }
+    val isItchGame = itchGameId != null
+    val itchSourceLabel = if (isItchGame) stringResource(R.string.itch_store_title) else null
+    val itchAuthor =
+        remember(itchGameId) {
+            itchGameId
+                ?.let { ItchLibrary.find(context, it) }
+                ?.url
+                ?.substringAfter("https://")
+                ?.substringBefore(".itch.io")
+                ?.takeIf { it.isNotBlank() }
+        }
+
+    var steamBranches by remember(app.id) { mutableStateOf<List<StoreBranchOption>>(emptyList()) }
+    var selectedSteamBranch by remember(app.id) { mutableStateOf(STEAM_DEFAULT_BRANCH) }
+    var steamBranchRefreshKey by remember(app.id) { mutableStateOf(0) }
+    val publicBranchLabel = stringResource(R.string.store_game_branch_public)
+
+    LaunchedEffect(app.id, isCustom, isEpic, isGog, steamBranchRefreshKey) {
+        if (isCustom || isEpic || isGog) {
+            steamBranches = emptyList()
+            return@LaunchedEffect
+        }
+        val loaded =
+            withContext(Dispatchers.IO) {
+                val installedBranch = SteamService.getInstalledBranch(app.id)
+                SteamService.getSelectableBranches(app.id).map { branch ->
+                    StoreBranchOption(
+                        id = branch.name,
+                        label =
+                            if (branch.name.equals(STEAM_DEFAULT_BRANCH, ignoreCase = true)) {
+                                publicBranchLabel
+                            } else {
+                                branch.name
+                            },
+                        buildId = branch.buildId,
+                        isInstalled = branch.name.equals(installedBranch, ignoreCase = true),
+                    )
+                } to SteamService.getSelectedBranch(app.id)
+            }
+        steamBranches = loaded.first
+        selectedSteamBranch = loaded.second
+    }
 
     val libraryDownloadRecords by com.winlator.cmod.app.service.download.DownloadCoordinator.records.collectAsState(
         initial = com.winlator.cmod.app.service.download.DownloadCoordinator.snapshotRecords(),
@@ -1881,7 +1955,7 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
             }
 
             isCustom -> {
-                stringResource(R.string.library_games_custom_game)
+                itchAuthor ?: stringResource(R.string.library_games_custom_game)
             }
 
             isEpic -> {
@@ -1924,6 +1998,7 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                             .fromId(it)
                             ?.badgeLabel
                     }
+                    ?: itchSourceLabel
                     ?: "Custom"
             else -> "Steam"
         }
@@ -2129,6 +2204,7 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                 }
             }
         } else if (isCustom) {
+            val itchId = itchGameId
             scope.launch(Dispatchers.IO) {
                 val cm = ContainerManager(context)
                 val sc = findLibraryShortcutForGame(cm, app, isCustom, isEpic, epicId)
@@ -2138,11 +2214,15 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                         context.filesDir,
                         "custom_icons/${app.name.replace("/", "_")}.png",
                     ).delete()
+                itchId?.let { ItchService.uninstall(context, it) }
                 PluviaApp.events.emit(AndroidEvent.LibraryInstallStatusChanged(app.id))
                 withContext(Dispatchers.Main) {
                     com.winlator.cmod.shared.ui.toast.WinToast.show(
                         context,
-                        getString(R.string.library_games_game_removed, app.name),
+                        getString(
+                            if (itchId == null) R.string.library_games_game_removed else R.string.library_games_game_uninstalled,
+                            app.name,
+                        ),
                         android.widget.Toast.LENGTH_SHORT,
                     )
                     onDismissRequest()
@@ -2212,7 +2292,7 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                             LibraryDetailScreen.Shortcut -> stringResource(R.string.common_ui_shortcut)
                             LibraryDetailScreen.Uninstall ->
                                 stringResource(
-                                    if (isCustom) R.string.common_ui_remove else R.string.common_ui_uninstall,
+                                    if (isCustom && itchGameId == null) R.string.common_ui_remove else R.string.common_ui_uninstall,
                                 )
                             else -> ""
                         }
@@ -2479,7 +2559,7 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                                 playCount = playCount,
                                 lastPlayedMillis = lastPlayed,
                                 installSizeText = installSizeText,
-                                isCustom = isCustom,
+                                removalKeepsFiles = isCustom && itchGameId == null,
                                 isRetro = isRetro,
                                 showBootToDesktop = retroCaps.showBootToDesktop,
                                 showSaveTransfer = retroCaps.showSaveTransfer,
@@ -2647,18 +2727,25 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                                             com.winlator.cmod.feature.retro.RetroAchievementsManager.isHardcorePreferred(context)
                                     ),
                                 onUninstall = uninstallGame,
-                                steamMenuEnabled = !isCustom &&
-                                    (!isEpic || epicGame?.isInstalled == true) &&
-                                    (!isGog || gogGame?.isInstalled == true),
+                                steamMenuEnabled = (isCustom && isItchGame) ||
+                                    (
+                                        !isCustom &&
+                                            (!isEpic || epicGame?.isInstalled == true) &&
+                                            (!isGog || gogGame?.isInstalled == true)
+                                    ),
                                 showVerifyFiles = !isCustom &&
                                     (!isEpic || epicGame?.isInstalled == true) &&
                                     (!isGog || gogGame?.isInstalled == true),
-                                showCheckForUpdate = !isCustom &&
-                                    (!isEpic || epicGame?.isInstalled == true) &&
-                                    (!isGog || gogGame?.isInstalled == true),
+                                showCheckForUpdate = (isCustom && isItchGame) ||
+                                    (
+                                        !isCustom &&
+                                            (!isEpic || epicGame?.isInstalled == true) &&
+                                            (!isGog || gogGame?.isInstalled == true)
+                                    ),
                                 showWorkshop = !isCustom && !isEpic && !isGog,
                                 areSteamActionsEnabled =
                                     when {
+                                        isCustom && isItchGame -> true
                                         isEpic -> !hasBlockingEpicDownloadForLibrary
                                         isGog -> !hasBlockingGogDownloadForLibrary
                                         else -> !hasBlockingSteamDownloadForLibrary
@@ -2695,12 +2782,31 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                                 },
                                 onCheckForUpdate = {
                                     when {
+                                        isCustom && isItchGame -> startItchUpdateCheck(itchGameId!!, app.name)
                                         isEpic -> startEpicUpdateCheck(epicId, app.name)
                                         isGog -> startGogUpdateCheck(gogGame!!.id, gogGame.title)
                                         else -> startUpdateCheck(app.id, app.name)
                                     }
                                 },
                                 onWorkshop = { if (!isEpic && !isGog && !isCustom) showWorkshopDialog = true },
+                                branches = steamBranches,
+                                selectedBranchId = selectedSteamBranch,
+                                isBranchSelectionEnabled = !hasBlockingSteamDownloadForLibrary,
+                                onSelectBranch = { branchId ->
+                                    selectedSteamBranch = branchId
+                                    val label = steamBranches.firstOrNull { it.id == branchId }?.label ?: branchId
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            SteamService.setSelectedBranch(app.id, branchId)
+                                        }
+                                        steamBranchRefreshKey++
+                                        com.winlator.cmod.shared.ui.toast.WinToast.show(
+                                            context,
+                                            context.getString(R.string.store_game_branch_switch_installed, label),
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        )
+                                    }
+                                },
                             )
 
                             when (heroPopup) {
@@ -2948,7 +3054,11 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
                             ) {
                                 Text(
                                     stringResource(
-                                        if (isCustom) R.string.library_games_remove_game else R.string.library_games_uninstall_game,
+                                        if (isCustom && itchGameId == null) {
+                                            R.string.library_games_remove_game
+                                        } else {
+                                            R.string.library_games_uninstall_game
+                                        },
                                     ),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = TextSecondary,
@@ -2960,14 +3070,18 @@ internal fun UnifiedActivity.LibraryGameDetailDialog(
 
                                 UninstallConfirmation(
                                     message =
-                                        if (isCustom) {
+                                        if (isCustom && itchGameId == null) {
                                             getString(R.string.library_games_remove_confirm, app.name)
                                         } else {
                                             getString(R.string.library_games_uninstall_confirm, app.name)
                                         },
                                     confirmLabel =
                                         stringResource(
-                                            if (isCustom) R.string.common_ui_remove else R.string.common_ui_uninstall,
+                                            if (isCustom && itchGameId == null) {
+                                                R.string.common_ui_remove
+                                            } else {
+                                                R.string.common_ui_uninstall
+                                            },
                                         ),
                                     onConfirm = uninstallGame,
                                     onCancel = { currentScreen = LibraryDetailScreen.Main },

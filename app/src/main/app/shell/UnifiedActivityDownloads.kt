@@ -151,7 +151,7 @@ import com.winlator.cmod.app.PluviaApp
 import com.winlator.cmod.app.db.PluviaDatabase
 import com.winlator.cmod.app.service.DownloadService
 import com.winlator.cmod.app.service.download.DownloadCoordinator
-import com.winlator.cmod.app.update.UpdateChecker
+import com.winlator.cmod.app.update.UpdateService
 import com.winlator.cmod.feature.settings.InputControlsFragment
 import com.winlator.cmod.feature.settings.SettingsFocusZone
 import com.winlator.cmod.feature.settings.SettingsHost
@@ -192,7 +192,12 @@ import com.winlator.cmod.feature.stores.steam.data.SteamApp
 import com.winlator.cmod.feature.stores.steam.enums.DownloadPhase
 import com.winlator.cmod.feature.stores.steam.events.AndroidEvent
 import com.winlator.cmod.feature.stores.steam.events.EventDispatcher
+import com.winlator.cmod.feature.stores.steam.service.STEAM_DEFAULT_BRANCH
 import com.winlator.cmod.feature.stores.steam.service.SteamService
+import com.winlator.cmod.feature.stores.steam.service.getInstalledBranch
+import com.winlator.cmod.feature.stores.steam.service.getSelectableBranches
+import com.winlator.cmod.feature.stores.steam.service.getSelectedBranch
+import com.winlator.cmod.feature.stores.steam.service.setSelectedBranch
 import com.winlator.cmod.feature.stores.steam.utils.PrefManager
 import com.winlator.cmod.feature.stores.steam.utils.getAvatarURL
 import com.winlator.cmod.feature.sync.CloudSyncHelper
@@ -249,6 +254,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // Downloads tab + queue/progress UI + game/workshop managers, split out of UnifiedActivity.kt (behavior-identical).
+
+private const val LIVE_PROGRESS_TICK_MS = 250L
 
 // Downloads Tab
 @Composable
@@ -310,6 +317,16 @@ internal fun UnifiedActivity.DownloadsTab(
     LaunchedEffect(syncDownloads) {
         DownloadCoordinator.changes.collect {
             latestSyncDownloads()
+        }
+    }
+
+    val hasLiveTransfer = downloads.any { (_, info) -> info.isActive() }
+
+    LaunchedEffect(hasLiveTransfer) {
+        if (!hasLiveTransfer) return@LaunchedEffect
+        while (true) {
+            delay(LIVE_PROGRESS_TICK_MS)
+            tick++
         }
     }
 
@@ -1021,6 +1038,7 @@ internal fun UnifiedActivity.DownloadItemDeck(
     val isSteam = id.startsWith("STEAM_")
     val isEpic = id.startsWith("EPIC_")
     val isGog = id.startsWith("GOG_")
+    val isItch = id.startsWith("ITCH_")
     val appId =
         if (isSteam) {
             id.removePrefix("STEAM_").toIntOrNull() ?: 0
@@ -1030,10 +1048,14 @@ internal fun UnifiedActivity.DownloadItemDeck(
             0
         }
     val gogId = if (isGog) id.removePrefix("GOG_") else ""
+    val itchId = if (isItch) id.removePrefix("ITCH_").toIntOrNull() ?: 0 else 0
 
     var steamApp by remember(appId) { mutableStateOf<SteamApp?>(null) }
     var epicGame by remember(appId) { mutableStateOf<EpicGame?>(null) }
     var gogGame by remember(gogId) { mutableStateOf<GOGGame?>(null) }
+    var itchGame by remember(itchId) {
+        mutableStateOf<com.winlator.cmod.feature.stores.itch.service.ItchInstalledGame?>(null)
+    }
     val context = LocalContext.current
     val clickInteractionSource = remember { MutableInteractionSource() }
     val animatedProgress by animateFloatAsState(
@@ -1055,7 +1077,7 @@ internal fun UnifiedActivity.DownloadItemDeck(
         previousStatus = status
     }
 
-    LaunchedEffect(appId, gogId, isSteam, isEpic, isGog) {
+    LaunchedEffect(appId, gogId, itchId, isSteam, isEpic, isGog, isItch) {
         withContext(Dispatchers.IO) {
             if (isSteam) {
                 steamApp = db.steamAppDao().findApp(appId)
@@ -1063,6 +1085,10 @@ internal fun UnifiedActivity.DownloadItemDeck(
                 epicGame = EpicService.getEpicGameOf(appId)
             } else if (isGog) {
                 gogGame = GOGService.getGOGGameOf(gogId)
+            } else if (isItch) {
+                itchGame =
+                    com.winlator.cmod.feature.stores.itch.service.ItchLibrary
+                        .find(context, itchId)
             }
         }
     }
@@ -1075,6 +1101,8 @@ internal fun UnifiedActivity.DownloadItemDeck(
             epicGame?.title
         } else if (isGog) {
             gogGame?.title
+        } else if (isItch) {
+            itchGame?.title ?: unknownGameLabel
         } else {
             unknownGameLabel
         }
@@ -1085,6 +1113,8 @@ internal fun UnifiedActivity.DownloadItemDeck(
             epicGame?.primaryImageUrl ?: epicGame?.iconUrl
         } else if (isGog) {
             gogGame?.imageUrl ?: gogGame?.iconUrl
+        } else if (isItch) {
+            itchGame?.coverUrl
         } else {
             null
         }
@@ -1358,6 +1388,8 @@ internal fun UnifiedActivity.GameManagerDialog(
     var showWorkshopDialog by remember(app.id) { mutableStateOf(false) }
     var updateInfo by remember(app.id) { mutableStateOf<SteamService.SteamUpdateInfo?>(null) }
     var updateStatusText by remember(app.id) { mutableStateOf<String?>(null) }
+    var branchOptions by remember(app.id) { mutableStateOf<List<StoreBranchOption>>(emptyList()) }
+    var selectedBranchId by remember(app.id) { mutableStateOf(STEAM_DEFAULT_BRANCH) }
     val downloadRecords by com.winlator.cmod.app.service.download.DownloadCoordinator.records.collectAsState(
         initial = com.winlator.cmod.app.service.download.DownloadCoordinator.snapshotRecords(),
     )
@@ -1384,7 +1416,11 @@ internal fun UnifiedActivity.GameManagerDialog(
         val installedDlcIds: Set<Int>,
         val baseManifestSizes: SteamService.ManifestSizes,
         val installed: Boolean,
+        val branches: List<StoreBranchOption>,
+        val selectedBranch: String,
     )
+
+    val publicBranchLabel = stringResource(R.string.store_game_branch_public)
 
     LaunchedEffect(app.id, downloadRecords) {
         val loadData =
@@ -1398,12 +1434,29 @@ internal fun UnifiedActivity.GameManagerDialog(
                     SteamService.getInstalledDlcDepotsOf(app.id)
                         .orEmpty()
                         .toSet()
+                val installedBranch = SteamService.getInstalledBranch(app.id)
+                val isInstalled = SteamService.isAppInstalled(app.id)
                 SteamInstallLoadData(
                     dlcApps = selectableDlcApps,
                     dlcSizes = perDlcSizes,
                     installedDlcIds = installedDlcIds,
                     baseManifestSizes = SteamService.getInstallableSelectedManifestSizes(app.id),
-                    installed = SteamService.isAppInstalled(app.id),
+                    installed = isInstalled,
+                    branches =
+                        SteamService.getSelectableBranches(app.id).map { branch ->
+                            StoreBranchOption(
+                                id = branch.name,
+                                label =
+                                    if (branch.name.equals(STEAM_DEFAULT_BRANCH, ignoreCase = true)) {
+                                        publicBranchLabel
+                                    } else {
+                                        branch.name
+                                    },
+                                buildId = branch.buildId,
+                                isInstalled = isInstalled && branch.name.equals(installedBranch, ignoreCase = true),
+                            )
+                        },
+                    selectedBranch = SteamService.getSelectedBranch(app.id),
                 )
             }
         dlcApps = loadData.dlcApps
@@ -1413,10 +1466,12 @@ internal fun UnifiedActivity.GameManagerDialog(
         selectedManifestSizes = loadData.baseManifestSizes
         baseInstallSize = loadData.baseManifestSizes.installSize
         installed = loadData.installed
+        branchOptions = loadData.branches
+        selectedBranchId = loadData.selectedBranch
         isLoading = false
     }
 
-    LaunchedEffect(app.id, selectedDlcIds.toList()) {
+    LaunchedEffect(app.id, selectedBranchId, selectedDlcIds.toList()) {
         selectedManifestSizes =
             withContext(Dispatchers.IO) {
                 SteamService.getInstallableSelectedManifestSizes(app.id, selectedDlcIds.toList())
@@ -1550,6 +1605,37 @@ internal fun UnifiedActivity.GameManagerDialog(
                 dlcs = dlcItems,
                 selectedDlcIds = selectedDlcIds.toSet(),
                 isDlcSelectionEnabled = steamDownloadRecord == null,
+                branches = branchOptions,
+                selectedBranchId = selectedBranchId,
+                isBranchSelectionEnabled = steamDownloadRecord == null,
+                onSelectBranch = { branchId ->
+                    if (steamDownloadRecord != null) {
+                        return@StoreGameDetailScreen
+                    }
+                    selectedBranchId = branchId
+                    val label =
+                        branchOptions.firstOrNull { it.id == branchId }?.label ?: branchId
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            SteamService.setSelectedBranch(app.id, branchId)
+                        }
+                        updateInfo = null
+                        updateStatusText = null
+                        selectedManifestSizes =
+                            withContext(Dispatchers.IO) {
+                                SteamService.getInstallableSelectedManifestSizes(app.id, selectedDlcIds.toList())
+                            }
+                        com.winlator.cmod.shared.ui.toast.WinToast.show(
+                            context,
+                            if (isReallyInstalled) {
+                                getString(R.string.store_game_branch_switch_installed, label)
+                            } else {
+                                getString(R.string.store_game_branch_changed, label)
+                            },
+                            android.widget.Toast.LENGTH_SHORT,
+                        )
+                    }
+                },
                 onBack = onDismissRequest,
                 onInstall = {
                     if (steamDownloadRecord != null) {

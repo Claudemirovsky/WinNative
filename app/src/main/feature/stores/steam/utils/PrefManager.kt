@@ -181,6 +181,13 @@ object PrefManager {
             setBoolean("wn_plan_w", value)
         }
 
+
+    var wnSteamAgent32: Boolean
+        get() = getBoolean("wn_steam_agent_32", true)
+        set(value) {
+            setBoolean("wn_steam_agent_32", value)
+        }
+
     var cellId: Int
         get() = getInt("cell_id", 0)
         set(value) {
@@ -265,7 +272,18 @@ object PrefManager {
         }
 
     var libraryStoreVisible: String
-        get() = getString("library_store_visible", "steam,epic,gog")
+        get() {
+            val stored = getString("library_store_visible", DEFAULT_STORE_VISIBLE)
+            if (!getBoolean("library_store_visible_itch_added", false)) {
+                setBoolean("library_store_visible_itch_added", true)
+                if (stored.isNotBlank() && !stored.split(",").contains("itch")) {
+                    val merged = "$stored,itch"
+                    setString("library_store_visible", merged)
+                    return merged
+                }
+            }
+            return stored
+        }
         set(value) {
             setString("library_store_visible", value)
         }
@@ -330,6 +348,12 @@ object PrefManager {
             setString("gog_download_folder", value)
         }
 
+    var itchDownloadFolder: String
+        get() = getString("itch_download_folder", "")
+        set(value) {
+            setString("itch_download_folder", value)
+        }
+
     var chatServiceEnabled: Boolean
         get() = getBoolean("chat_service_enabled", true)
         set(value) {
@@ -366,6 +390,45 @@ object PrefManager {
             setBoolean("chat_stay_running_on_exit", value)
         }
 
+    fun getSelectedBranch(appId: Int): String = getString("steam_selected_branch_$appId", "")
+
+    fun setSelectedBranch(
+        appId: Int,
+        branch: String,
+    ) {
+        if (branch.isBlank()) {
+            requirePrefs().edit().remove("steam_selected_branch_$appId").apply()
+        } else {
+            setString("steam_selected_branch_$appId", branch)
+        }
+    }
+
+    fun getInstalledBranch(appId: Int): String = getString("steam_installed_branch_$appId", "")
+
+    fun setInstalledBranch(
+        appId: Int,
+        branch: String,
+    ) {
+        setString("steam_installed_branch_$appId", branch.ifBlank { "public" })
+    }
+
+    fun getInstalledBuildId(appId: Int): Long = getLong("steam_installed_build_id_$appId", 0L)
+
+    fun setInstalledBuildId(
+        appId: Int,
+        buildId: Long,
+    ) {
+        setLong("steam_installed_build_id_$appId", buildId.coerceAtLeast(0L))
+    }
+
+    fun clearInstalledBranchState(appId: Int) {
+        requirePrefs()
+            .edit()
+            .remove("steam_installed_branch_$appId")
+            .remove("steam_installed_build_id_$appId")
+            .apply()
+    }
+
     fun clearAuthTokens() {
         requirePrefs().edit().apply {
             remove("user_name")
@@ -384,4 +447,6 @@ object PrefManager {
         libraryLayoutModeCache = null
         requirePrefs().edit().clear().commit()
     }
+
+    const val DEFAULT_STORE_VISIBLE = "steam,epic,gog,itch"
 }
