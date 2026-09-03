@@ -153,6 +153,7 @@ import com.winlator.cmod.runtime.display.connector.UnixSocketConfig;
 import com.winlator.cmod.runtime.display.environment.ImageFs;
 import com.winlator.cmod.runtime.display.environment.XEnvironment;
 import com.winlator.cmod.feature.stores.steam.SteamClientManager;
+import com.winlator.cmod.runtime.audio.directaudio.DirectAudioDriver;
 import com.winlator.cmod.runtime.display.environment.components.ALSAServerComponent;
 import com.winlator.cmod.runtime.display.environment.components.GuestProgramLauncherComponent;
 import com.winlator.cmod.runtime.display.environment.components.NetworkInfoUpdateComponent;
@@ -7454,6 +7455,25 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                             pulseOptions
                     )
             );
+        } else if (DirectAudioDriver.INSTANCE.isSelected(audioDriver)) {
+            // No daemon to start; the driver talks AAudio from Wine's unixlib.
+            // wineInfo matches imageFs.winePath, so the ABI follows the layer being written.
+            String daWineVersion =
+                    wineInfo != null ? wineInfo.fullVersion() : container.getWineVersion();
+            if (!DirectAudioDriver.INSTANCE.install(this, imageFs, daWineVersion)) {
+                Log.w("XServerDisplayActivity", "DirectAudio install failed for wine '"
+                        + daWineVersion + "'; audio may be silent");
+            }
+
+            boolean micRequested = DirectAudioDriver.INSTANCE.isMicEnabled(
+                    getShortcutSetting(
+                            DirectAudioDriver.EXTRA_MIC,
+                            container.getExtra(DirectAudioDriver.EXTRA_MIC)));
+            if (DirectAudioDriver.INSTANCE.shouldExposeMic(this, micRequested)) {
+                envVars.put(DirectAudioDriver.ENV_MIC, "1");
+            }
+            Log.d("XServerDisplayActivity", "DirectAudio: micRequested=" + micRequested +
+                    " micExposed=" + envVars.has(DirectAudioDriver.ENV_MIC));
         }
 
         // Wine cannot enumerate Android network interfaces; Steam treats that as offline.
@@ -12255,6 +12275,10 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity
                 }
                 else if (audioDriver.equals("pulseaudio")) {
                     registryEditor.setStringValue("Software\\Wine\\Drivers", "Audio", "pulse");
+                }
+                else if (DirectAudioDriver.INSTANCE.isSelected(audioDriver)) {
+                    registryEditor.setStringValue("Software\\Wine\\Drivers", "Audio",
+                            DirectAudioDriver.IDENTIFIER);
                 }
             }
             container.putExtra("audioDriver", audioDriver);
