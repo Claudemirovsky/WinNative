@@ -708,6 +708,7 @@ data class XServerDrawerState(
     val mangoHudBgAlpha: Float = 0.5f,
     val mangoHudScale: Float = 0.735f,
     val mangoHudLocked: Boolean = false,
+    val fexStatsAvailable: Boolean = true,
 )
 
 class XServerDrawerStateHolder(
@@ -1268,6 +1269,7 @@ fun buildXServerDrawerState(
     mangoHudBgAlpha: Float = 0.5f,
     mangoHudScale: Float = 0.735f,
     mangoHudLocked: Boolean = false,
+    fexStatsAvailable: Boolean = true,
 ): XServerDrawerState {
     val items =
         mutableListOf(
@@ -1471,6 +1473,7 @@ fun buildXServerDrawerState(
         mangoHudBgAlpha = mangoHudBgAlpha,
         mangoHudScale = mangoHudScale,
         mangoHudLocked = mangoHudLocked,
+        fexStatsAvailable = fexStatsAvailable,
     )
 }
 
